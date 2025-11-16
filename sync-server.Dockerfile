@@ -54,7 +54,8 @@ ARG USER_UID=1001
 ARG USER_GID=$USER_UID
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
-    && mkdir /data && chown -R ${USERNAME}:${USERNAME} /data
+    && mkdir /data && chown -R ${USERNAME}:${USERNAME} /data \
+    && mkdir /persist && chown -R ${USERNAME}:${USERNAME} /persist
 
 WORKDIR /app
 ENV NODE_ENV=production

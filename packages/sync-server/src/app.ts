@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import fs, { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +23,29 @@ const app = express();
 
 process.on('unhandledRejection', reason => {
   console.log('Rejection:', reason);
+});
+
+function copyDataOnShutdown() {
+  const dataDir = '/data';
+  const persistDir = '/persist';
+
+  try {
+    console.log('SIGTERM received, copying data from /data to /persist...');
+    if (fs.existsSync(dataDir) && fs.existsSync(persistDir)) {
+      execSync(`cp -a ${dataDir}/. ${persistDir}/`, { stdio: 'inherit' });
+      console.log('Data copied successfully from /data to /persist');
+    } else {
+      console.log('/data directory does not exist, skipping copy');
+    }
+  } catch (error) {
+    console.error('Error copying data:', error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => {
+  copyDataOnShutdown();
+  process.exit(0);
 });
 
 app.disable('x-powered-by');
