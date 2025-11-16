@@ -32,7 +32,7 @@ function copyDataOnShutdown() {
   try {
     console.log('SIGTERM received, copying data from /data to /persist...');
     if (fs.existsSync(dataDir) && fs.existsSync(persistDir)) {
-      execSync(`cp -a ${dataDir}/. ${persistDir}/`, { stdio: 'inherit' });
+      execSync(`cp -ar ${dataDir}/. ${persistDir}/`, { stdio: 'inherit' });
       console.log('Data copied successfully from /data to /persist');
     } else {
       console.log('/data directory does not exist, skipping copy');
@@ -194,7 +194,27 @@ function sendServerStartedMessage() {
   );
 }
 
+function copyDataOnStartup() {
+  const dataDir = '/data';
+  const persistDir = '/persist';
+
+  try {
+    console.log('Copying data from /persist to /data on startup...');
+    if (fs.existsSync(persistDir) && fs.existsSync(dataDir)) {
+      execSync(`cp -ar ${persistDir}/. ${dataDir}/`, { stdio: 'inherit' });
+      console.log('Data copied successfully from /persist to /data');
+    } else {
+      console.log('/persist directory does not exist, skipping copy');
+    }
+  } catch (error) {
+    console.error('Error copying data on startup:', error);
+    process.exit(1);
+  }
+}
+
 export async function run() {
+  copyDataOnStartup();
+
   const portVal = config.get('port');
   const port = typeof portVal === 'string' ? parseInt(portVal) : portVal;
   const hostname = config.get('hostname');
