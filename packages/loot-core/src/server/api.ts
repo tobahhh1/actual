@@ -520,10 +520,10 @@ handlers['api/account-predicted-net'] = async function ({
       startDate,
       endDate,
     });
-    if (sched._amount > 0) {
-      scheduledExpenses -= sched._amount * occurrences; // Expenses are positive
+    if (sched._amount < 0) {
+      scheduledExpenses += sched._amount * occurrences;
     } else {
-      scheduledIncome -= sched._amount * occurrences;
+      scheduledIncome += sched._amount * occurrences;
     }
   }
 
