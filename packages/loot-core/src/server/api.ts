@@ -559,7 +559,7 @@ handlers['api/account-predicted-net'] = async function ({
     const totalIncomeForMonth = sheet
       .get()
       .getCellValue(sheet_tag, 'total-income') as number;
-    if (totalBudgetedForMonth !== 0 || totalIncomeForMonth !== 0) {
+    if (totalBudgetedForMonth || totalIncomeForMonth) {
       lastNonZeroIncome = totalIncomeForMonth;
       lastNonZeroBudget = totalBudgetedForMonth;
       break;
@@ -586,7 +586,7 @@ handlers['api/account-predicted-net'] = async function ({
     const totalIncomeForMonth = sheet
       .get()
       .getCellValue(sheet_tag, 'total-income') as number;
-    if (totalBudgetedForMonth !== 0 || totalIncomeForMonth !== 0) {
+    if (totalBudgetedForMonth || totalIncomeForMonth) {
       // Assume user hasn't filled out budget sheet yet.
       // If so, fill in with last month's budget.
       lastNonZeroIncome = totalIncomeForMonth;
