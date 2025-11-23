@@ -148,7 +148,7 @@ function NetWorthInner({ widget }: NetWorthInnerProps) {
         : currentMonth;
 
       // Allow selection up to 12 months into the future
-      const futureLimit = monthUtils.addMonths(currentMonth, 12);
+      const futureLimit = monthUtils.addMonths(currentMonth, 1200);
       const latestMonth =
         latestTransactionMonth > futureLimit
           ? latestTransactionMonth
