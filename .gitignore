@@ -65,3 +65,5 @@ build/
 
 # Lage cache
 .lage/
+
+persist/
