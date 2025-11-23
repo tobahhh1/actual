@@ -86,6 +86,7 @@ export interface ApiHandlers {
     accountId: string;
     startDate: string;
     endDate: string;
+    balance_at_start_date: number | undefined
   }) => Promise<{
     net: number;
     breakdown: {
@@ -93,7 +94,9 @@ export interface ApiHandlers {
       scheduledExpenses: number;
       budgetedIncome: number;
       budgetedExpenses: number;
+      interestAccrued: number;
     };
+    end_balance?: number;
   }>;
 
   'api/transactions-export': (arg: {

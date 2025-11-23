@@ -12,6 +12,7 @@ type PredictedBalance = {
     scheduledExpenses: number;
     budgetedIncome: number;
     budgetedExpenses: number;
+    interestAccrued: number;
   };
 };
 
@@ -22,10 +23,12 @@ export async function getAccountPredictedNet(
   accountId: string,
   startDate: string,
   endDate: string,
+  balance_at_start_date?: number,
 ): Promise<PredictedBalance> {
   return send('api/account-predicted-net', {
     accountId,
     startDate,
     endDate,
+    balance_at_start_date,
   });
 }

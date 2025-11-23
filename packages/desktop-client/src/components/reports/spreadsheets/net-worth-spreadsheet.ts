@@ -140,25 +140,26 @@ export function createSpreadsheet(
             );
           }
           // For future dates, get predicted balances
-          const future_net: Array<Balance> = (
-            await Promise.all(
-              futureRange.map((date, idx) =>
-                getAccountPredictedNet(
-                  acct.id,
-                  futureRange[idx - 1] || historicalEndDate,
-                  monthUtils.subDays(date, 1),
-                ),
-              ),
-            )
-          ).map((predictedBalance, idx) => {
-            return {
-              date: futureRange[idx],
-              amount: predictedBalance.net,
-            };
-          });
-          future_net.forEach(b => {
-            processedBalances[b.date] = b;
-          });
+          let todayBalance = starting;
+          for (const date in processedBalances) {
+            if (monthUtils.isBefore(date, monthUtils.addDays(historicalEndDate, 1))) {
+              todayBalance += processedBalances[date].amount;
+            }
+          }
+          let prevBalance = todayBalance;
+          let prevEndDate = historicalEndDate;
+          for (const futureDate of futureRange) {
+            console.log('Getting predictions for', acct.id, prevEndDate, futureDate, prevBalance);
+            const predictions = await getAccountPredictedNet(
+              acct.id,
+              prevEndDate,
+              monthUtils.subDays(futureDate, 1),
+              prevBalance,
+            );
+            prevBalance += predictions.net;
+            prevEndDate = futureDate;
+            processedBalances[futureDate] = { date: futureDate, amount: predictions.net };
+          }
         }
 
         return {

@@ -473,6 +473,7 @@ handlers['api/account-predicted-net'] = async function ({
   accountId,
   startDate,
   endDate,
+  balance_at_start_date,
 }) {
   checkFileOpen();
 
@@ -498,8 +499,21 @@ handlers['api/account-predicted-net'] = async function ({
     [accountId],
   );
 
+
   if (!account) {
     throw APIError(`Account not found: ${accountId}`);
+  }
+
+  // If an account collects interest, it's named with a numeral and a percent sign.
+  // This is the EAR (Effective Annual Rate) expressed as a percentage.
+  // Figure out the daily interest rate and apply it to the balance over the period.
+
+  let interestAccrued = 0;
+  let monthlyRate = 0;
+  const interestMatch = account.name.match(/\d+(\.\d+)?%/);
+  if (interestMatch) {
+    const annualRate = parseFloat(interestMatch[0]) / 100;
+    monthlyRate = Math.pow(1 + annualRate, 1 / 12) - 1;
   }
 
   const { data: schedules } = await aqlQuery(
@@ -527,74 +541,33 @@ handlers['api/account-predicted-net'] = async function ({
     }
   }
 
-  if (account.offbudget) {
-    return {
-      net: scheduledIncome + scheduledExpenses,
-      breakdown: {
-        scheduledIncome,
-        scheduledExpenses,
-        budgetedIncome: 0,
-        budgetedExpenses: 0,
-      },
-    };
-  }
-
   let budgetedIncome = 0;
   let budgetedExpenses = 0;
 
   // Find first prior budget month that ddn't have zero budgeted/income
   let lastNonZeroIncome = 0;
   let lastNonZeroBudget = 0;
-  let iters = 0;
-  for (
-    let m = monthUtils.monthFromDate(startDate);
-    iters < 1200;
-    m = monthUtils.subMonths(m, 1)
-  ) {
-    iters += 1;
-    const sheet_tag = monthUtils.sheetForMonth(m);
-    const totalBudgetedForMonth = sheet
-      .get()
-      .getCellValue(sheet_tag, 'total-budgeted') as number;
-    const totalIncomeForMonth = sheet
-      .get()
-      .getCellValue(sheet_tag, 'total-income') as number;
-    if (totalBudgetedForMonth || totalIncomeForMonth) {
-      lastNonZeroIncome = totalIncomeForMonth;
-      lastNonZeroBudget = totalBudgetedForMonth;
-      break;
+  if (!account.offbudget) {
+    let iters = 0;
+    for (
+      let m = monthUtils.monthFromDate(startDate);
+      iters < 1200;
+      m = monthUtils.subMonths(m, 1)
+    ) {
+      iters += 1;
+      const sheet_tag = monthUtils.sheetForMonth(m);
+      const totalBudgetedForMonth = sheet
+        .get()
+        .getCellValue(sheet_tag, 'total-budgeted') as number;
+      const totalIncomeForMonth = sheet
+        .get()
+        .getCellValue(sheet_tag, 'total-income') as number;
+      if (totalBudgetedForMonth || totalIncomeForMonth) {
+        lastNonZeroIncome = totalIncomeForMonth;
+        lastNonZeroBudget = totalBudgetedForMonth;
+        break;
+      }
     }
-  }
-
-  // Process dates as month-to-month batch
-  const months = monthUtils.rangeInclusive(startDate, endDate);
-  for (let i = 0; i < months.length; i++) {
-    const month = months[i];
-    const monthStart = monthUtils.firstDayOfMonth(month);
-    const monthEnd = monthUtils.lastDayOfMonth(month);
-    const sheet_tag = monthUtils.sheetForMonth(month);
-    const daysInMonth =
-      monthUtils.differenceInCalendarDays(monthEnd, monthStart) + 1;
-    const start = monthUtils.isAfter(startDate, monthStart)
-      ? startDate
-      : monthStart;
-    const end = monthUtils.isBefore(endDate, monthEnd) ? endDate : monthEnd;
-    const daysRemaining = monthUtils.differenceInCalendarDays(end, start) + 1;
-    const totalBudgetedForMonth = sheet
-      .get()
-      .getCellValue(sheet_tag, 'total-budgeted') as number;
-    const totalIncomeForMonth = sheet
-      .get()
-      .getCellValue(sheet_tag, 'total-income') as number;
-    if (totalBudgetedForMonth || totalIncomeForMonth) {
-      // Assume user hasn't filled out budget sheet yet.
-      // If so, fill in with last month's budget.
-      lastNonZeroIncome = totalIncomeForMonth;
-      lastNonZeroBudget = totalBudgetedForMonth;
-    }
-    const portion = daysRemaining / daysInMonth;
-    budgetedIncome += lastNonZeroIncome * portion;
-    budgetedExpenses += lastNonZeroBudget * portion;
   }
 
   // Divide by number of on budget accounts.
@@ -602,22 +575,67 @@ handlers['api/account-predicted-net'] = async function ({
   const onBudgetAccounts = await db.all<AccountEntity>(
     'SELECT id FROM accounts WHERE offbudget = 0 AND tombstone = 0',
   );
-  const numOnBudgetAccounts = onBudgetAccounts.length;
-  if (numOnBudgetAccounts > 1) {
-    budgetedIncome = budgetedIncome / numOnBudgetAccounts;
-    budgetedExpenses = budgetedExpenses / numOnBudgetAccounts;
+
+  // Process dates as month-to-month batch
+  const numOnBudgetAccounts = Math.max(onBudgetAccounts.length, 1)
+  const months = monthUtils.rangeInclusive(startDate, endDate);
+  for (let i = 0; i < months.length; i++) {
+    const month = months[i];
+    const monthStart = monthUtils.firstDayOfMonth(month);
+    const monthEnd = monthUtils.lastDayOfMonth(month);
+    if (!account.offbudget) {
+      const sheet_tag = monthUtils.sheetForMonth(month);
+      const daysInMonth =
+        monthUtils.differenceInCalendarDays(monthEnd, monthStart) + 1;
+      const start = monthUtils.isAfter(startDate, monthStart)
+        ? startDate
+        : monthStart;
+      const end = monthUtils.isBefore(endDate, monthEnd) ? endDate : monthEnd;
+      const daysRemaining = monthUtils.differenceInCalendarDays(end, start) + 1;
+      const totalBudgetedForMonth = sheet
+        .get()
+        .getCellValue(sheet_tag, 'total-budgeted') as number;
+      const totalIncomeForMonth = sheet
+        .get()
+        .getCellValue(sheet_tag, 'total-income') as number;
+      if (totalBudgetedForMonth || totalIncomeForMonth) {
+        // Assume user hasn't filled out budget sheet yet.
+        // If so, fill in with last month's budget.
+        lastNonZeroIncome = totalIncomeForMonth;
+        lastNonZeroBudget = totalBudgetedForMonth;
+      }
+      const portion = daysRemaining / daysInMonth;
+      budgetedIncome += lastNonZeroIncome * portion / numOnBudgetAccounts;
+      budgetedExpenses += lastNonZeroBudget * portion / numOnBudgetAccounts;
+    }
+    // Assume monthly compounding
+    if (balance_at_start_date !== undefined && monthlyRate > 0) {
+      const monthEndBalance = budgetedIncome + scheduledIncome + balance_at_start_date + budgetedExpenses + scheduledExpenses + interestAccrued;
+      const interestForMonth = monthEndBalance * monthlyRate;
+      interestAccrued += interestForMonth;
+    }
   }
 
-  return {
+  const result = {
     net:
-      scheduledIncome + scheduledExpenses + budgetedIncome + budgetedExpenses,
+      scheduledIncome + scheduledExpenses + budgetedIncome + budgetedExpenses + interestAccrued,
     breakdown: {
       scheduledIncome,
       scheduledExpenses,
       budgetedIncome,
       budgetedExpenses,
+      interestAccrued
     },
+    end_balance: balance_at_start_date !== undefined
+      ? balance_at_start_date +
+        scheduledIncome +
+        scheduledExpenses +
+        budgetedIncome +
+        budgetedExpenses +
+        interestAccrued
+      : undefined,
   };
+  return result;
 };
 
 handlers['api/transactions-export'] = async function ({

@@ -337,11 +337,13 @@ export function getAccountPredictedNet(
   accountId: APIAccountEntity['id'],
   startDate: string,
   endDate: string,
+  balance_at_start_date: number | undefined,
 ) {
   return send('api/account-predicted-net', {
     accountId,
     startDate,
     endDate,
+    balance_at_start_date,
   });
 }
 
