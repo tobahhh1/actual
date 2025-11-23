@@ -13,6 +13,7 @@ import {
   updateSchedule,
   deleteSchedule,
   setNextDate,
+  countScheduleOccurrences,
 } from './app';
 
 beforeEach(async () => {
@@ -255,6 +256,373 @@ describe('schedule app', () => {
       row = res.data[0];
 
       expect(row.next_date).toBe('2021-05-18');
+    });
+  });
+
+  describe('countScheduleOccurrences', () => {
+    it('counts daily occurrences', () => {
+      const config = {
+        start: '2021-01-01',
+        frequency: 'daily' as const,
+        endMode: 'never' as const,
+      };
+
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-01',
+          endDate: '2021-01-01',
+        }),
+      ).toBe(1);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-01',
+          endDate: '2021-01-07',
+        }),
+      ).toBe(7);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-01',
+          endDate: '2021-01-31',
+        }),
+      ).toBe(31);
+    });
+
+    it('counts daily occurrences with interval', () => {
+      const config = {
+        start: '2021-01-01',
+        frequency: 'daily' as const,
+        interval: 2,
+        endMode: 'never' as const,
+      };
+
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-01',
+          endDate: '2021-01-07',
+        }),
+      ).toBe(4); // 1st, 3rd, 5th, 7th
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-01',
+          endDate: '2021-01-10',
+        }),
+      ).toBe(5); // 1st, 3rd, 5th, 7th, 9th
+    });
+
+    it('counts weekly occurrences', () => {
+      const config = {
+        start: '2021-05-17', // Monday
+        frequency: 'weekly' as const,
+        endMode: 'never' as const,
+      };
+
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-17',
+          endDate: '2021-05-17',
+        }),
+      ).toBe(1);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-17',
+          endDate: '2021-05-23',
+        }),
+      ).toBe(1);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-17',
+          endDate: '2021-05-24',
+        }),
+      ).toBe(2);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-17',
+          endDate: '2021-06-14',
+        }),
+      ).toBe(5);
+    });
+
+    it('counts monthly occurrences', () => {
+      const config = {
+        start: '2021-01-15',
+        frequency: 'monthly' as const,
+        endMode: 'never' as const,
+      };
+
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-15',
+          endDate: '2021-01-15',
+        }),
+      ).toBe(1);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-15',
+          endDate: '2021-03-15',
+        }),
+      ).toBe(3);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-15',
+          endDate: '2021-12-31',
+        }),
+      ).toBe(12);
+    });
+
+    it('counts monthly occurrences with patterns', () => {
+      const config = {
+        start: '2021-01-15',
+        frequency: 'monthly' as const,
+        patterns: [
+          { type: 'day' as const, value: 15 },
+          { type: 'day' as const, value: 30 },
+        ],
+        endMode: 'never' as const,
+      };
+
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-15',
+          endDate: '2021-01-15',
+        }),
+      ).toBe(1);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-15',
+          endDate: '2021-01-30',
+        }),
+      ).toBe(2);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-15',
+          endDate: '2021-02-28',
+        }),
+      ).toBe(3); // Jan 15, Jan 30, Feb 15
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-15',
+          endDate: '2021-03-31',
+        }),
+      ).toBe(5); // Jan 15, Jan 30, Feb 15, Mar 15, Mar 30 (Feb has no 30th)
+    });
+
+    it('counts yearly occurrences', () => {
+      const config = {
+        start: '2021-05-17',
+        frequency: 'yearly' as const,
+        endMode: 'never' as const,
+      };
+
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-17',
+          endDate: '2021-05-17',
+        }),
+      ).toBe(1);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-17',
+          endDate: '2022-05-16',
+        }),
+      ).toBe(1);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-17',
+          endDate: '2022-05-17',
+        }),
+      ).toBe(2);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-17',
+          endDate: '2025-05-17',
+        }),
+      ).toBe(5);
+    });
+
+    it('respects end date in config', () => {
+      const config = {
+        start: '2021-01-01',
+        frequency: 'monthly' as const,
+        endMode: 'on_date' as const,
+        endDate: '2021-03-01',
+      };
+
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-01',
+          endDate: '2021-12-31',
+        }),
+      ).toBe(3); // Jan, Feb, Mar only
+    });
+
+    it('respects end occurrences in config', () => {
+      const config = {
+        start: '2021-01-01',
+        frequency: 'monthly' as const,
+        endMode: 'after_n_occurrences' as const,
+        endOccurrences: 3,
+      };
+
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-01',
+          endDate: '2021-12-31',
+        }),
+      ).toBe(3); // Only 3 occurrences total
+    });
+
+    it('handles invalid date ranges', () => {
+      const config = {
+        start: '2021-01-01',
+        frequency: 'daily' as const,
+        endMode: 'never' as const,
+      };
+
+      // End before start
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-15',
+          endDate: '2021-01-01',
+        }),
+      ).toBe(0);
+    });
+
+    it('handles dates before schedule start', () => {
+      const config = {
+        start: '2021-06-01',
+        frequency: 'daily' as const,
+        endMode: 'never' as const,
+      };
+
+      // Range ends before schedule starts
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-01-01',
+          endDate: '2021-05-31',
+        }),
+      ).toBe(0);
+
+      // Range starts before but includes schedule start
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-15',
+          endDate: '2021-06-05',
+        }),
+      ).toBe(5); // June 1-5
+    });
+
+    it('handles weekend skipping with after mode', () => {
+      const config = {
+        start: '2021-05-01', // Saturday
+        frequency: 'weekly' as const,
+        skipWeekend: true,
+        weekendSolveMode: 'after' as const,
+        endMode: 'never' as const,
+      };
+
+      // Should move Saturday to Monday
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-01',
+          endDate: '2021-05-02',
+        }),
+      ).toBe(0);
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-01',
+          endDate: '2021-05-03',
+        }),
+      ).toBe(1); // Monday May 3
+    });
+
+    it('handles weekend skipping with before mode', () => {
+      const config = {
+        start: '2021-05-01', // Saturday
+        frequency: 'weekly' as const,
+        skipWeekend: true,
+        weekendSolveMode: 'before' as const,
+        endMode: 'never' as const,
+      };
+
+      // Saturday May 1 moved to Friday Apr 30
+      // When counting from May 1, this occurrence is actually on Apr 30 (before the range)
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-04-30',
+          endDate: '2021-05-06',
+        }),
+      ).toBe(1); // May 1 (Sat) -> Apr 30 (Fri)
+
+      // Counting from May 1 to May 14 should get May 8 (Sat) -> May 7 (Fri)
+      // May 15 (Sat) -> May 14 (Fri) is on the boundary
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-05-01',
+          endDate: '2021-05-14',
+        }),
+      ).toBe(1); // Only May 8 -> May 7
+
+      // Extend range to include May 15 -> May 14
+      expect(
+        countScheduleOccurrences({
+          config,
+          startDate: '2021-04-30',
+          endDate: '2021-05-14',
+        }),
+      ).toBe(2); // May 1 -> Apr 30 and May 8 -> May 7
+    });
+
+    it('returns 0 for invalid inputs', () => {
+      expect(
+        countScheduleOccurrences({
+          config: null,
+          startDate: '2021-01-01',
+          endDate: '2021-01-31',
+        }),
+      ).toBe(0);
+      expect(
+        countScheduleOccurrences({
+          config: { start: '2021-01-01', frequency: 'daily', endMode: 'never' },
+          startDate: '',
+          endDate: '2021-01-31',
+        }),
+      ).toBe(0);
+      expect(
+        countScheduleOccurrences({
+          config: { start: '2021-01-01', frequency: 'daily', endMode: 'never' },
+          startDate: '2021-01-01',
+          endDate: '',
+        }),
+      ).toBe(0);
     });
   });
 });

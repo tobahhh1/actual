@@ -358,6 +358,67 @@ async function getUpcomingDates({ config, count }) {
   }
 }
 
+/**
+ * Calculates the number of occurrences for a recurring schedule within a date range.
+ *
+ * @param config - The recurring schedule configuration
+ * @param startDate - The start date of the range (inclusive, in YYYY-MM-DD format)
+ * @param endDate - The end date of the range (inclusive, in YYYY-MM-DD format)
+ * @returns The number of occurrences within the date range, or 0 if invalid
+ */
+export function countScheduleOccurrences({ config, startDate, endDate }) {
+  if (!config || !startDate || !endDate) {
+    return 0;
+  }
+
+  const start = parseDate(startDate);
+  const end = parseDate(endDate);
+
+  // Validate date range
+  if (start > end) {
+    return 0;
+  }
+
+  try {
+    const rules = recurConfigToRSchedule(config);
+    const schedule = new RSchedule({ rrules: rules });
+
+    // Get all occurrences from the start date to end date (inclusive)
+    // Add 1 day to end to make it inclusive
+    const occurrences = schedule
+      .occurrences({
+        start: d.startOfDay(start),
+        end: d.addDays(d.startOfDay(end), 1),
+      })
+      .toArray();
+
+    // Count occurrences that fall within the date range (inclusive)
+    let count = 0;
+    for (const occurrence of occurrences) {
+      let occurrenceDate = occurrence.date;
+
+      // Apply weekend skipping if configured
+      if (config.skipWeekend) {
+        occurrenceDate = getDateWithSkippedWeekend(
+          occurrenceDate,
+          config.weekendSolveMode || 'after',
+        );
+      }
+
+      // Check if the occurrence is within our range (inclusive)
+      if (occurrenceDate >= start && occurrenceDate <= end) {
+        count++;
+      }
+    }
+
+    return count;
+  } catch (err) {
+    // Return 0 if there's any error in processing
+    logger.warn('Error counting schedule occurrences:', err);
+    return 0;
+  }
+}
+
 // Services
 
 function onRuleUpdate(rule) {

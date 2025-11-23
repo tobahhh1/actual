@@ -147,15 +147,17 @@ function NetWorthInner({ widget }: NetWorthInnerProps) {
           )
         : currentMonth;
 
+      // Allow selection up to 12 months into the future
+      const futureLimit = monthUtils.addMonths(currentMonth, 12);
       const latestMonth =
-        latestTransactionMonth > currentMonth
+        latestTransactionMonth > futureLimit
           ? latestTransactionMonth
-          : currentMonth;
+          : futureLimit;
 
       // Make sure the month selects are at least populates with a
       // year's worth of months. We can undo this when we have fancier
       // date selects.
-      const yearAgo = monthUtils.subMonths(latestMonth, 12);
+      const yearAgo = monthUtils.subMonths(currentMonth, 12);
       if (earliestMonth > yearAgo) {
         earliestMonth = yearAgo;
       }

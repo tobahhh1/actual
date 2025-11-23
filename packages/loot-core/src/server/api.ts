@@ -1,4 +1,3 @@
-// @ts-strict-ignore
 import { getClock } from '@actual-app/crdt';
 
 import * as connection from '../platform/server/connection';
@@ -44,6 +43,7 @@ import * as db from './db';
 import { APIError } from './errors';
 import { runMutator } from './mutators';
 import * as prefs from './prefs';
+import { countScheduleOccurrences } from './schedules/app';
 import * as sheet from './sheet';
 import { setSyncingMode, batchMessages } from './sync';
 
@@ -468,6 +468,157 @@ handlers['api/budget-reset-hold'] = withMutation(async function ({ month }) {
   await validateMonth(month);
   return handlers['budget/reset-hold']({ month });
 });
+
+handlers['api/account-predicted-net'] = async function ({
+  accountId,
+  startDate,
+  endDate,
+}) {
+  checkFileOpen();
+
+  if (!startDate || !monthUtils.parseDate(startDate)) {
+    throw APIError('Invalid startDate format. Expected YYYY-MM-DD');
+  }
+
+  if (!endDate || !monthUtils.parseDate(endDate)) {
+    throw APIError('Invalid endDate format. Expected YYYY-MM-DD');
+  }
+
+  if (monthUtils.isAfter(startDate, endDate)) {
+    throw APIError('startDate must be before or equal to endDate');
+  }
+
+  // standardize date
+  startDate = monthUtils.dayFromDate(startDate);
+  endDate = monthUtils.dayFromDate(endDate);
+
+  // Get the account
+  const account = await db.first<AccountEntity>(
+    'SELECT * FROM accounts WHERE id = ? AND tombstone = 0',
+    [accountId],
+  );
+
+  if (!account) {
+    throw APIError(`Account not found: ${accountId}`);
+  }
+
+  const { data: schedules } = await aqlQuery(
+    q('schedules')
+      .filter({
+        tombstone: false,
+        next_date: { $lte: endDate },
+        _account: accountId,
+      })
+      .select('*'),
+  );
+
+  let scheduledIncome = 0;
+  let scheduledExpenses = 0;
+  for (const sched of schedules) {
+    const occurrences = countScheduleOccurrences({
+      config: sched._date,
+      startDate,
+      endDate,
+    });
+    if (sched._amount > 0) {
+      scheduledExpenses -= sched._amount * occurrences; // Expenses are positive
+    } else {
+      scheduledIncome -= sched._amount * occurrences;
+    }
+  }
+
+  if (account.offbudget) {
+    return {
+      net: scheduledIncome + scheduledExpenses,
+      breakdown: {
+        scheduledIncome,
+        scheduledExpenses,
+        budgetedIncome: 0,
+        budgetedExpenses: 0,
+      },
+    };
+  }
+
+  let budgetedIncome = 0;
+  let budgetedExpenses = 0;
+
+  // Find first prior budget month that ddn't have zero budgeted/income
+  let lastNonZeroIncome = 0;
+  let lastNonZeroBudget = 0;
+  let iters = 0;
+  for (
+    let m = monthUtils.monthFromDate(startDate);
+    iters < 1200;
+    m = monthUtils.subMonths(m, 1)
+  ) {
+    iters += 1;
+    const sheet_tag = monthUtils.sheetForMonth(m);
+    const totalBudgetedForMonth = sheet
+      .get()
+      .getCellValue(sheet_tag, 'total-budgeted') as number;
+    const totalIncomeForMonth = sheet
+      .get()
+      .getCellValue(sheet_tag, 'total-income') as number;
+    if (totalBudgetedForMonth !== 0 || totalIncomeForMonth !== 0) {
+      lastNonZeroIncome = totalIncomeForMonth;
+      lastNonZeroBudget = totalBudgetedForMonth;
+      break;
+    }
+  }
+
+  // Process dates as month-to-month batch
+  const months = monthUtils.rangeInclusive(startDate, endDate);
+  for (let i = 0; i < months.length; i++) {
+    const month = months[i];
+    const monthStart = monthUtils.firstDayOfMonth(month);
+    const monthEnd = monthUtils.lastDayOfMonth(month);
+    const sheet_tag = monthUtils.sheetForMonth(month);
+    const daysInMonth =
+      monthUtils.differenceInCalendarDays(monthEnd, monthStart) + 1;
+    const start = monthUtils.isAfter(startDate, monthStart)
+      ? startDate
+      : monthStart;
+    const end = monthUtils.isBefore(endDate, monthEnd) ? endDate : monthEnd;
+    const daysRemaining = monthUtils.differenceInCalendarDays(end, start) + 1;
+    const totalBudgetedForMonth = sheet
+      .get()
+      .getCellValue(sheet_tag, 'total-budgeted') as number;
+    const totalIncomeForMonth = sheet
+      .get()
+      .getCellValue(sheet_tag, 'total-income') as number;
+    if (totalBudgetedForMonth !== 0 || totalIncomeForMonth !== 0) {
+      // Assume user hasn't filled out budget sheet yet.
+      // If so, fill in with last month's budget.
+      lastNonZeroIncome = totalIncomeForMonth;
+      lastNonZeroBudget = totalBudgetedForMonth;
+    }
+    const portion = daysRemaining / daysInMonth;
+    budgetedIncome += lastNonZeroIncome * portion;
+    budgetedExpenses += lastNonZeroBudget * portion;
+  }
+
+  // Divide by number of on budget accounts.
+  // We assume all accounts will bear equal responsibility for budgeted amounts.
+  const onBudgetAccounts = await db.all<AccountEntity>(
+    'SELECT id FROM accounts WHERE offbudget = 0 AND tombstone = 0',
+  );
+  const numOnBudgetAccounts = onBudgetAccounts.length;
+  if (numOnBudgetAccounts > 1) {
+    budgetedIncome = budgetedIncome / numOnBudgetAccounts;
+    budgetedExpenses = budgetedExpenses / numOnBudgetAccounts;
+  }
+
+  return {
+    net:
+      scheduledIncome + scheduledExpenses + budgetedIncome + budgetedExpenses,
+    breakdown: {
+      scheduledIncome,
+      scheduledExpenses,
+      budgetedIncome,
+      budgetedExpenses,
+    },
+  };
+};
 
 handlers['api/transactions-export'] = async function ({
   transactions,

@@ -109,20 +109,26 @@ function boundedRange(
   interval?: string,
   _firstDayOfWeekIdx?: SyncedPrefs['firstDayOfWeekIdx'],
 ): [string, string, 'static'] {
+  const currentDay = monthUtils.currentDay();
+  const futureLimit = monthUtils.addMonths(monthUtils.currentMonth(), 12);
+
   switch (interval) {
     case 'Daily':
-      latest = monthUtils.currentDay();
+      latest = currentDay;
       break;
     case 'Weekly':
       // For weekly views, clamp to today so the current (ongoing) week is included
       // and reflects data up to the current day.
-      latest = monthUtils.currentDay();
+      latest = currentDay;
       break;
     case 'Monthly':
-      latest = monthUtils.getMonthEnd(monthUtils.currentDay());
+      // Allow up to 12 months into the future for Monthly view
+      latest = monthUtils.getMonthEnd(
+        futureLimit > latest ? futureLimit : latest,
+      );
       break;
     case 'Yearly':
-      latest = monthUtils.currentDay();
+      latest = currentDay;
       break;
     default:
       break;

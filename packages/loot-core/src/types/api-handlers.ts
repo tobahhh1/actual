@@ -81,6 +81,20 @@ export interface ApiHandlers {
 
   'api/budget-reset-hold': (arg: { month: string }) => Promise<void>;
 
+  'api/account-predicted-net': (arg: {
+    accountId: string;
+    startDate: string;
+    endDate: string;
+  }) => Promise<{
+    net: number;
+    breakdown: {
+      scheduledIncome: number;
+      scheduledExpenses: number;
+      budgetedIncome: number;
+      budgetedExpenses: number;
+    };
+  }>;
+
   'api/transactions-export': (arg: {
     transactions;
     categoryGroups;

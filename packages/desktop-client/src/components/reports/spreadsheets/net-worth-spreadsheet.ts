@@ -10,6 +10,7 @@ import {
   type RuleConditionEntity,
 } from 'loot-core/types/models';
 
+import { getAccountPredictedNet } from '@desktop-client/components/reports/future-transactions';
 import { ReportOptions } from '@desktop-client/components/reports/ReportOptions';
 import { type FormatType } from '@desktop-client/hooks/useFormat';
 import { type useSpreadsheet } from '@desktop-client/hooks/useSpreadsheet';
@@ -40,26 +41,13 @@ export function createSpreadsheet(
     });
     const conditionsOpKey = conditionsOp === 'or' ? '$or' : '$and';
 
-    // Convert dates to ensure we have the full range. Then clamp end date to avoid future projections
-    const startDate = monthUtils.firstDayOfMonth(start);
+    const startDate = monthUtils.dayFromDate(start);
+    const endDate = monthUtils.dayFromDate(end);
 
-    // Start with the provided end-of-month date, then adjust for current context
-    let endDate = monthUtils.lastDayOfMonth(end);
-
-    if (interval === 'Daily') {
-      const today = monthUtils.currentDay();
-      if (monthUtils.isAfter(endDate, today)) {
-        endDate = today;
-      }
-    } else if (interval === 'Weekly') {
-      // Include the ongoing (current) week up to today instead of clamping to the
-      // start of the current week. This ensures the current week appears in the
-      // report even if the week hasn't finished yet.
-      const today = monthUtils.currentDay();
-      if (monthUtils.isAfter(endDate, today)) {
-        endDate = today;
-      }
-    }
+    const hasFutureDates = monthUtils.isAfter(endDate, monthUtils.currentDay());
+    const historicalEndDate = hasFutureDates
+      ? monthUtils.currentDay()
+      : endDate;
 
     const data = await Promise.all(
       accounts.map(async acct => {
@@ -83,7 +71,7 @@ export function createSpreadsheet(
                 account: acct.id,
                 $and: [
                   { date: { $gte: startDate } },
-                  { date: { $lte: endDate } },
+                  { date: { $lte: historicalEndDate } },
                 ],
               })
               .groupBy(
@@ -107,7 +95,7 @@ export function createSpreadsheet(
           ).then(({ data }) => data),
         ]);
 
-        // For weekly intervals, transform dates to week format and properly aggregate
+        // No aggregation is done by DB on weeks, so we need to do it here
         let processedBalances: Record<string, Balance>;
         if (interval === 'Weekly') {
           // Group transactions by week and sum their amounts
@@ -125,6 +113,52 @@ export function createSpreadsheet(
           });
         } else {
           processedBalances = keyBy(balances, 'date');
+        }
+
+        if (hasFutureDates) {
+          let futureRange: Array<string>;
+          if (interval === 'Daily') {
+            futureRange = monthUtils.dayRangeInclusive(
+              monthUtils.addDays(historicalEndDate, 1),
+              endDate,
+            );
+          } else if (interval === 'Weekly') {
+            futureRange = monthUtils.weekRangeInclusive(
+              monthUtils.addWeeks(historicalEndDate, 1),
+              endDate,
+              firstDayOfWeekIdx,
+            );
+          } else if (interval === 'Yearly') {
+            futureRange = monthUtils.yearRangeInclusive(
+              monthUtils.addYears(historicalEndDate, 1),
+              endDate,
+            );
+          } else {
+            futureRange = monthUtils.rangeInclusive(
+              monthUtils.addMonths(historicalEndDate, 1),
+              endDate,
+            );
+          }
+          // For future dates, get predicted balances
+          const future_net: Array<Balance> = (
+            await Promise.all(
+              futureRange.map((date, idx) =>
+                getAccountPredictedNet(
+                  acct.id,
+                  futureRange[idx - 1] || historicalEndDate,
+                  monthUtils.subDays(date, 1),
+                ),
+              ),
+            )
+          ).map((predictedBalance, idx) => {
+            return {
+              date: futureRange[idx],
+              amount: predictedBalance.net,
+            };
+          });
+          future_net.forEach(b => {
+            processedBalances[b.date] = b;
+          });
         }
 
         return {
@@ -254,10 +288,10 @@ function recalculate(
     const graphPoint = {
       x: d.format(x, displayFormat, { locale }),
       y: total,
-      assets: format(assets, 'financial'),
-      debt: `-${format(debt, 'financial')}`,
-      change: format(change, 'financial'),
-      networth: format(total, 'financial'),
+      assets: format(Math.trunc(assets), 'financial'),
+      debt: `-${format(Math.trunc(debt), 'financial')}`,
+      change: format(Math.trunc(change), 'financial'),
+      networth: format(Math.trunc(total), 'financial'),
       date: d.format(x, tooltipFormat, { locale }),
     };
 
@@ -281,9 +315,9 @@ function recalculate(
       start: startDate,
       end: endDate,
     },
-    netWorth: endNetWorth,
-    totalChange: endNetWorth - startNetWorth,
-    lowestNetWorth,
-    highestNetWorth,
+    netWorth: Math.trunc(endNetWorth),
+    totalChange: Math.trunc(endNetWorth - startNetWorth),
+    lowestNetWorth: lowestNetWorth ? Math.trunc(lowestNetWorth) : null,
+    highestNetWorth: highestNetWorth ? Math.trunc(highestNetWorth) : null,
   };
 }

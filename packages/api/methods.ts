@@ -263,6 +263,14 @@ export function getSchedules() {
   return send('api/schedules-get');
 }
 
+export function getAccountPredictedNet(accountId, startDate, endDate) {
+  return send('api/account-predicted-net', {
+    accountId,
+    startDate,
+    endDate,
+  });
+}
+
 export function getIDByName(type, name) {
   return send('api/get-id-by-name', { type, name });
 }
