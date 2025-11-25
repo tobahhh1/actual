@@ -42,11 +42,37 @@ export function createSpreadsheet(
     const conditionsOpKey = conditionsOp === 'or' ? '$or' : '$and';
 
     const startDate = monthUtils.dayFromDate(start);
-    const endDate = monthUtils.dayFromDate(end);
+    let endDate = monthUtils.dayFromDate(end);
 
-    const hasFutureDates = monthUtils.isAfter(endDate, monthUtils.currentDay());
+    let hasFutureDates = false;
+    const today = monthUtils.currentDay();
+    if (interval === 'Daily') {
+      endDate = monthUtils.dayFromDate(end);
+      hasFutureDates = monthUtils.isAfter(
+        endDate,
+        today
+      )
+    } else if (interval === 'Weekly') {
+      endDate = monthUtils.getWeekEnd(endDate, firstDayOfWeekIdx);
+      hasFutureDates = monthUtils.isAfter(
+        monthUtils.weekFromDate(endDate, firstDayOfWeekIdx),
+        monthUtils.currentWeek()
+      )
+    } else if (interval === 'Monthly') {
+      endDate = monthUtils.lastDayOfMonth(endDate);
+      hasFutureDates = monthUtils.isAfter(
+        monthUtils.monthFromDate(endDate),
+        monthUtils.currentMonth()
+      )
+    } else if (interval === 'Yearly') {
+      endDate = monthUtils.getYearEnd(endDate);
+      hasFutureDates = monthUtils.isAfter(
+        monthUtils.yearFromDate(endDate),
+        monthUtils.currentYear()
+      )
+    }
     const historicalEndDate = hasFutureDates
-      ? monthUtils.currentDay()
+      ? today
       : endDate;
 
     const data = await Promise.all(
@@ -94,6 +120,8 @@ export function createSpreadsheet(
               ]),
           ).then(({ data }) => data),
         ]);
+
+        console.log("balances:", balances);
 
         // No aggregation is done by DB on weeks, so we need to do it here
         let processedBalances: Record<string, Balance>;
@@ -149,7 +177,6 @@ export function createSpreadsheet(
           let prevBalance = todayBalance;
           let prevEndDate = historicalEndDate;
           for (const futureDate of futureRange) {
-            console.log('Getting predictions for', acct.id, prevEndDate, futureDate, prevBalance);
             const predictions = await getAccountPredictedNet(
               acct.id,
               prevEndDate,
