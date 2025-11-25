@@ -92,7 +92,6 @@ export interface ApiHandlers {
     breakdown: {
       scheduledIncome: number;
       scheduledExpenses: number;
-      budgetedIncome: number;
       budgetedExpenses: number;
       interestAccrued: number;
     };
