@@ -531,19 +531,6 @@ handlers['api/account-predicted-net'] = async function ({
 
   let scheduledIncome = 0;
   let scheduledExpenses = 0;
-  for (const sched of schedules) {
-    const occurrences = countScheduleOccurrences({
-      config: sched._date,
-      startDate,
-      endDate,
-    });
-    if (sched._amount < 0) {
-      scheduledExpenses += sched._amount * occurrences;
-    } else {
-      scheduledIncome += sched._amount * occurrences;
-    }
-  }
-
   let budgetedExpenses = 0;
 
   // Find first prior budget month that ddn't have zero budgeted/income
@@ -579,16 +566,15 @@ handlers['api/account-predicted-net'] = async function ({
     const month = months[i];
     const monthStart = monthUtils.firstDayOfMonth(month);
     const monthEnd = monthUtils.lastDayOfMonth(month);
-
+    const monthStartClamped = monthUtils.isAfter(startDate, monthStart)
+      ? startDate
+      : monthStart;
+    const monthEndClamped = monthUtils.isBefore(endDate, monthEnd) ? endDate : monthEnd;
     if (!account.offbudget) {
       const sheet_tag = monthUtils.sheetForMonth(month);
       const daysInMonth =
         monthUtils.differenceInCalendarDays(monthEnd, monthStart) + 1;
-      const start = monthUtils.isAfter(startDate, monthStart)
-        ? startDate
-        : monthStart;
-      const end = monthUtils.isBefore(endDate, monthEnd) ? endDate : monthEnd;
-      const daysRemaining = monthUtils.differenceInCalendarDays(end, start) + 1;
+      const daysRemaining = monthUtils.differenceInCalendarDays(monthEndClamped, monthStartClamped) + 1;
       const totalBudgetedForMonth = global_sheet
         .getCellValue(sheet_tag, 'total-budgeted') as number;
       if (totalBudgetedForMonth) {
@@ -603,6 +589,21 @@ handlers['api/account-predicted-net'] = async function ({
       const portion = daysRemaining / daysInMonth;
       budgetedExpenses += (lastNonZeroBudget - spentSoFar) * portion / numOnBudgetAccounts;
     }
+
+    for (const sched of schedules) {
+      const occurrences = countScheduleOccurrences({
+        config: sched._date,
+        startDate: monthStartClamped,
+        endDate: monthEndClamped,
+      });
+      if (sched._amount < 0) {
+        scheduledExpenses += sched._amount * occurrences;
+      } else {
+        scheduledIncome += sched._amount * occurrences;
+      }
+    }
+
+
     // Assume monthly compounding
     if (balance_at_start_date !== undefined && monthlyRate > 0) {
       const monthEndBalance = scheduledIncome + balance_at_start_date + budgetedExpenses + scheduledExpenses + interestAccrued;
